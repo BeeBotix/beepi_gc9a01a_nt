@@ -58,11 +58,14 @@ static int      s_pin_dc    = -1;
 static int      s_pin_rst   = -1;
 static int      s_pin_bl    = -1;
 
-// SPI transfer scratch buffer — avoids malloc on the pixel-push hot path.
-// 240*240*2 = 115200 bytes (< 128 KB, fine on all Pi RAM configs).
-// We byte-swap into this buffer then fire one ioctl.
+// SPI transfer scratch buffer — full frame, byte-swapped into here.
+// 240*240*2 = 115200 bytes.  Sent to the kernel in s_spi_chunk slices
+// because spidev rejects transfers larger than its bufsiz module param
+// (default 4096 bytes on most kernels, up to 65536 on some).
+// We detect the real limit at init by reading /sys/module/spidev/parameters/bufsiz.
 #define SPI_BUF_BYTES  (240 * 240 * 2)
-static uint8_t s_spi_buf[SPI_BUF_BYTES];
+static uint8_t  s_spi_buf[SPI_BUF_BYTES];
+static size_t   s_spi_chunk = 4096;   // kernel bufsiz, probed at init
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -154,11 +157,8 @@ int beepi_hal_init(const BeePiHALConfig *cfg)
         return -errno;
     }
 
-    // SPI speed
-    // Pi 3B+ SPI clock divider rounds to the nearest power-of-2 divisor of
-    // 400 MHz.  40 MHz is unreliable on jumper wires / breadboards.
-    // 20 MHz (divisor 20) is rock-solid on all Pi models.
-    // Increase to 32 MHz or 40 MHz only after confirming stable operation.
+    // SPI speed — 20 MHz is rock-solid on Pi 3B+ jumper wires.
+    // Increase to 32/40 MHz only after confirming stable operation.
     uint32_t speed = cfg->spi_speed_hz > 0 ? cfg->spi_speed_hz : 20000000u;
     if (ioctl(s_spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
         fprintf(stderr, "beepi_hal: SPI_IOC_WR_MAX_SPEED_HZ failed: %s\n",
@@ -167,7 +167,24 @@ int beepi_hal_init(const BeePiHALConfig *cfg)
         return -errno;
     }
 
-    return 0;
+    // Probe the kernel spidev transfer size limit.
+    // /sys/module/spidev/parameters/bufsiz holds the compiled-in cap.
+    // Default is 4096 bytes; some kernels allow up to 65536.
+    // Transfers larger than bufsiz get EMSGSIZE ("Message too long").
+    {
+        FILE *f = fopen("/sys/module/spidev/parameters/bufsiz", "r");
+        if (f) {
+            unsigned long val = 0;
+            if (fscanf(f, "%lu", &val) == 1 && val > 0)
+                s_spi_chunk = (size_t)val;
+            fclose(f);
+        }
+        if (s_spi_chunk > SPI_BUF_BYTES) s_spi_chunk = SPI_BUF_BYTES;
+        fprintf(stdout, "beepi_hal: spidev bufsiz = %zu bytes per ioctl\n",
+                s_spi_chunk);
+    }
+
+    return 0;  // beepi_hal_init success
 }
 
 // ---------------------------------------------------------------------------
@@ -213,19 +230,29 @@ void beepi_hal_delay_ms(uint32_t ms)
 
 static void spi_transfer(const uint8_t *buf, size_t len)
 {
-    struct spi_ioc_transfer tr;
-    memset(&tr, 0, sizeof(tr));
-    tr.tx_buf        = (unsigned long)buf;
-    tr.rx_buf        = 0;
-    tr.len           = (uint32_t)len;
-    tr.speed_hz      = 0;       // use device default set at open
-    tr.delay_usecs   = 0;
-    tr.bits_per_word = 8;
-    tr.cs_change     = 0;
+    // Chunk transfers to fit within the kernel spidev bufsiz limit.
+    // Exceeding it returns EMSGSIZE ("Message too long").
+    size_t offset = 0;
+    while (offset < len) {
+        size_t chunk = len - offset;
+        if (chunk > s_spi_chunk) chunk = s_spi_chunk;
 
-    if (ioctl(s_spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0) {
-        fprintf(stderr, "beepi_hal: SPI_IOC_MESSAGE failed: %s\n",
-                strerror(errno));
+        struct spi_ioc_transfer tr;
+        memset(&tr, 0, sizeof(tr));
+        tr.tx_buf        = (unsigned long)(buf + offset);
+        tr.rx_buf        = 0;
+        tr.len           = (uint32_t)chunk;
+        tr.speed_hz      = 0;
+        tr.delay_usecs   = 0;
+        tr.bits_per_word = 8;
+        tr.cs_change     = 0;
+
+        if (ioctl(s_spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0) {
+            fprintf(stderr, "beepi_hal: SPI_IOC_MESSAGE failed: %s\n",
+                    strerror(errno));
+            return;
+        }
+        offset += chunk;
     }
 }
 
@@ -249,17 +276,17 @@ void beepi_hal_write_buf(const uint8_t *buf, size_t len)
 
 void beepi_hal_write_pixels(const uint16_t *pixels, size_t count)
 {
-    // Byte-swap each pixel from host little-endian to wire big-endian.
-    // Process in chunks that fit in our scratch buffer.
+    // Chunk size limited to s_spi_chunk bytes (kernel spidev bufsiz).
+    // Each ioctl sends exactly one chunk — no EMSGSIZE errors.
+    const size_t max_pixels = s_spi_chunk / 2;
     size_t remaining = count;
     const uint16_t *src = pixels;
 
-    while (remaining > 0) {
-        size_t chunk = remaining;
-        size_t max_pixels = SPI_BUF_BYTES / 2;
-        if (chunk > max_pixels) chunk = max_pixels;
+    gpio_write(s_gpio_h, s_pin_dc, 1);   // DC high = data for entire frame
 
-        // __builtin_bswap16 → REV16 on ARMv6T2+ — zero overhead
+    while (remaining > 0) {
+        size_t chunk = (remaining < max_pixels) ? remaining : max_pixels;
+
         uint8_t *dst = s_spi_buf;
         for (size_t i = 0; i < chunk; i++) {
             uint16_t swapped = __builtin_bswap16(src[i]);
@@ -268,8 +295,21 @@ void beepi_hal_write_pixels(const uint16_t *pixels, size_t count)
             dst += 2;
         }
 
-        gpio_write(s_gpio_h, s_pin_dc, 1);
-        spi_transfer(s_spi_buf, chunk * 2);
+        struct spi_ioc_transfer tr;
+        memset(&tr, 0, sizeof(tr));
+        tr.tx_buf        = (unsigned long)s_spi_buf;
+        tr.rx_buf        = 0;
+        tr.len           = (uint32_t)(chunk * 2);
+        tr.speed_hz      = 0;
+        tr.delay_usecs   = 0;
+        tr.bits_per_word = 8;
+        tr.cs_change     = 0;
+
+        if (ioctl(s_spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0) {
+            fprintf(stderr, "beepi_hal: SPI_IOC_MESSAGE failed: %s\n",
+                    strerror(errno));
+            return;
+        }
 
         src       += chunk;
         remaining -= chunk;
