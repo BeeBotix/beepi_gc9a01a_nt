@@ -87,7 +87,7 @@ cfg.gpio_bl  = 18;   // GPIO 18 — Pin 12  (-1 if always on)
 ```bash
 # Install lgpio (works on ALL Pi models including Pi 5)
 sudo apt update
-sudo apt install liblgpio-dev
+sudo apt install cmake build-essential liblgpio-dev
 
 # Enable SPI kernel module if not already enabled
 sudo raspi-config   # Interface Options → SPI → Enable
