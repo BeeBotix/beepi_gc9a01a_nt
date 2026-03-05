@@ -61,7 +61,7 @@ static const uint8_t GC9A01A_INIT_SEQ[] = {
     0x8E, 1, 0xFF,
     0x8F, 1, 0xFF,
     0xB6, 2, 0x00, 0x00,
-    GC9A01A_MADCTL, 1, (GC9A01A_MADCTL_MX | GC9A01A_MADCTL_BGR),
+    GC9A01A_MADCTL, 1, (GC9A01A_MADCTL_MY | GC9A01A_MADCTL_MX | GC9A01A_MADCTL_BGR),
     GC9A01A_COLMOD, 1, 0x05,   // 16-bit RGB565
     0x90, 4, 0x08, 0x08, 0x08, 0x08,
     0xBD, 1, 0x06,
@@ -201,23 +201,22 @@ void BeePi_GC9A01A::setRotation(uint8_t r)
     uint8_t madctl = 0;
     switch (_rotation) {
         case 0:
-            madctl   = GC9A01A_MADCTL_MX | GC9A01A_MADCTL_BGR;
+            madctl   = GC9A01A_MADCTL_MY | GC9A01A_MADCTL_MX | GC9A01A_MADCTL_BGR;
             _width   = BEEPI_DISP_W;
             _height  = BEEPI_DISP_H;
             break;
         case 1:
-            madctl   = GC9A01A_MADCTL_MV | GC9A01A_MADCTL_BGR;
+            madctl   = GC9A01A_MADCTL_MV | GC9A01A_MADCTL_MX | GC9A01A_MADCTL_BGR;
             _width   = BEEPI_DISP_H;
             _height  = BEEPI_DISP_W;
             break;
         case 2:
-            madctl   = GC9A01A_MADCTL_MY | GC9A01A_MADCTL_BGR;
+            madctl   = GC9A01A_MADCTL_BGR;
             _width   = BEEPI_DISP_W;
             _height  = BEEPI_DISP_H;
             break;
         case 3:
-            madctl   = GC9A01A_MADCTL_MX | GC9A01A_MADCTL_MY |
-                       GC9A01A_MADCTL_MV | GC9A01A_MADCTL_BGR;
+            madctl   = GC9A01A_MADCTL_MY | GC9A01A_MADCTL_MV | GC9A01A_MADCTL_BGR;
             _width   = BEEPI_DISP_H;
             _height  = BEEPI_DISP_W;
             break;

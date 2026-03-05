@@ -31,6 +31,14 @@
 #include "hal/beepi_hal.h"
 
 // ---------------------------------------------------------------------------
+// Font geometry (built-in 5x8 bitmap font)
+// ---------------------------------------------------------------------------
+
+#define BEEPI_FONT_W        5   ///< Glyph width in pixels
+#define BEEPI_FONT_H        8   ///< Glyph height in pixels
+#define BEEPI_FONT_ADVANCE  6   ///< Pixels per character (W + 1px gap)
+
+// ---------------------------------------------------------------------------
 // Display geometry
 // ---------------------------------------------------------------------------
 

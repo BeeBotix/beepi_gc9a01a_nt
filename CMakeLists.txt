@@ -92,6 +92,67 @@ target_link_libraries(testpattern PRIVATE
 )
 
 # ---------------------------------------------------------------------------
+# Example: testpattern2
+# ---------------------------------------------------------------------------
+
+add_executable(testpattern2
+    example/testpattern2.cpp
+)
+
+target_include_directories(testpattern2 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib
+)
+
+target_link_libraries(testpattern2 PRIVATE
+    beepi_gc9a01a_nt
+)
+
+# ---------------------------------------------------------------------------
+# Image viewer: imgview
+#
+# Step 1 — Convert assets/logo.png → assets/logo_rgb565.h at build time.
+#           Uses the pure-stdlib Python3 script png_to_rgb565.py.
+#           Re-runs automatically whenever logo.png changes.
+# Step 2 — Compile imgview.cpp which #includes the generated header.
+# ---------------------------------------------------------------------------
+
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(NOT Python3_FOUND)
+    message(WARNING
+        "Python3 not found — imgview will not be built.\n"
+        "Install with: sudo apt install python3")
+else()
+    set(LOGO_PNG    "${CMAKE_CURRENT_SOURCE_DIR}/assets/logo.png")
+    set(LOGO_H      "${CMAKE_CURRENT_SOURCE_DIR}/assets/logo_rgb565.h")
+    set(CONVERTER   "${CMAKE_CURRENT_SOURCE_DIR}/assets/png_to_rgb565.py")
+
+    add_custom_command(
+        OUTPUT  ${LOGO_H}
+        COMMAND ${Python3_EXECUTABLE} ${CONVERTER} ${LOGO_PNG} ${LOGO_H} logo_rgb565
+        DEPENDS ${LOGO_PNG} ${CONVERTER}
+        COMMENT "Converting logo.png → logo_rgb565.h"
+        VERBATIM
+    )
+    add_custom_target(logo_header DEPENDS ${LOGO_H})
+
+    add_executable(imgview
+        example/imgview.cpp
+    )
+    add_dependencies(imgview logo_header)
+
+    target_include_directories(imgview PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets
+    )
+
+    target_link_libraries(imgview PRIVATE
+        beepi_gc9a01a_nt
+    )
+
+    message(STATUS "imgview: enabled  (logo: ${LOGO_PNG})")
+endif()
+
+# ---------------------------------------------------------------------------
 # Install targets (optional)
 # ---------------------------------------------------------------------------
 
@@ -120,6 +181,7 @@ message(STATUS "  make -j$(nproc)")
 message(STATUS "")
 message(STATUS "To run (GPIO needs root or gpio group):")
 message(STATUS "  sudo ./testpattern")
+message(STATUS "  sudo ./testpattern2")
 message(STATUS "  -- or --")
 message(STATUS "  sudo usermod -aG gpio $USER  (then re-login)")
-message(STATUS "  ./testpattern")
+message(STATUS "  ./testpattern  /  ./testpattern2")
