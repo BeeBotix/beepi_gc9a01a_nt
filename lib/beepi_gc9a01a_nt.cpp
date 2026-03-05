@@ -31,9 +31,16 @@ static inline int32_t _clamp32(int32_t v, int32_t lo, int32_t hi)
 // ---------------------------------------------------------------------------
 // GC9A01A initialisation sequence
 //
-// Format: { cmd, n_params, param0, param1, … } repeated, terminated by 0xFF.
-// If n_params has bit7 set, insert a 150 ms delay after the command.
+// Format: { cmd, n_params, param0, param1, … } repeated.
+// End marker: 0x00 cmd with 0xFF as the param count — impossible in normal use.
+// If n_params has bit7 set (and isn't the end marker), insert 150 ms delay.
+//
+// NOTE: 0xFF is a valid GC9A01A command (inter-register enable group 3).
+// We cannot use 0xFF as an end sentinel — it collides with that command.
+// End marker is encoded as { 0x00, 0xFF } which is otherwise unused.
 // ---------------------------------------------------------------------------
+
+#define BEEPI_INIT_END  0x00, 0xFF   // end of sequence marker
 
 static const uint8_t GC9A01A_INIT_SEQ[] = {
     0xEF, 0,
@@ -59,7 +66,7 @@ static const uint8_t GC9A01A_INIT_SEQ[] = {
     0x90, 4, 0x08, 0x08, 0x08, 0x08,
     0xBD, 1, 0x06,
     0xBC, 1, 0x00,
-    0xFF, 3, 0x60, 0x01, 0x04,
+    0xFF, 3, 0x60, 0x01, 0x04,  // inter-register enable — valid 0xFF command
     0xC3, 1, 0x13,  // POWER2
     0xC4, 1, 0x13,  // POWER3
     0xC9, 1, 0x22,  // POWER4
@@ -87,7 +94,7 @@ static const uint8_t GC9A01A_INIT_SEQ[] = {
     0x21, 0,           // INVON
     0x11, 0x80,        // SLPOUT + 150 ms delay
     0x29, 0x80,        // DISPON + 150 ms delay
-    0xFF               // end marker
+    BEEPI_INIT_END
 };
 
 // ---------------------------------------------------------------------------
@@ -158,9 +165,13 @@ void BeePi_GC9A01A::end()
 void BeePi_GC9A01A::_initSequence()
 {
     const uint8_t *p = GC9A01A_INIT_SEQ;
-    while (*p != 0xFF) {
+    for (;;) {
         uint8_t cmd     = *p++;
         uint8_t arg     = *p++;
+
+        // End marker: cmd=0x00, arg=0xFF
+        if (cmd == 0x00 && arg == 0xFF) break;
+
         uint8_t nparams = arg & 0x7F;
         bool    delay   = (arg & 0x80) != 0;
 

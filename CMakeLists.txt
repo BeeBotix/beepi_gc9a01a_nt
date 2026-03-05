@@ -32,8 +32,8 @@ if(BEEPI_ARCH_64)
     set(BEEPI_ARCH_FLAGS "-mcpu=native -O2")
 elseif(BEEPI_ARCH_32)
     # Raspberry Pi 3B+ running 32-bit Raspberry Pi OS (ARMv8 in 32-bit mode)
-    # Cortex-A53 with NEON — safe and compatible across all 32-bit Pi OS
-    set(BEEPI_ARCH_FLAGS "-march=armv8-a -mcpu=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard -O2")
+    # mcpu=cortex-a53 already implies the correct march — do not set both.
+    set(BEEPI_ARCH_FLAGS "-mcpu=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard -O2")
 else()
     set(BEEPI_ARCH_FLAGS "-O2")
 endif()

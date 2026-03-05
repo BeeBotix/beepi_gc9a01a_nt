@@ -60,7 +60,8 @@ static BeePiHALConfig make_config()
 {
     BeePiHALConfig cfg = {};
     cfg.spi_device   = "/dev/spidev0.0";
-    cfg.spi_speed_hz = 40000000u;       // 40 MHz — safe on Pi 3B+/4/5/Zero2W
+    cfg.spi_speed_hz = 20000000u;       // 20 MHz — safe on Pi 3B+ with jumper wires
+                                        // Increase to 32 MHz or 40 MHz once confirmed stable
     cfg.gpio_dc      = 25;              // GPIO 25 — Pin 22
     cfg.gpio_rst     = 24;              // GPIO 24 — Pin 18  (-1 if not wired)
     cfg.gpio_bl      = 18;              // GPIO 18 — Pin 12  (-1 if always on)
@@ -345,12 +346,20 @@ int main()
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
 
-    printf("BeeBotix GC9A01A Test Pattern — Milestone 1\n");
-    printf("============================================\n");
-
     BeePiHALConfig cfg = make_config();
     BeePi_GC9A01A display(cfg);
     g_display = &display;
+
+    printf("BeeBotix GC9A01A Test Pattern — Milestone 1\n");
+    printf("============================================\n");
+    printf("Config:\n");
+    printf("  SPI device   : %s\n", cfg.spi_device);
+    printf("  SPI speed    : %u Hz (%u MHz)\n", cfg.spi_speed_hz, cfg.spi_speed_hz/1000000);
+    printf("  GPIO chip    : %s\n", cfg.gpio_chip);
+    printf("  DC  pin (BCM): %d\n", cfg.gpio_dc);
+    printf("  RST pin (BCM): %d  (%s)\n", cfg.gpio_rst, cfg.gpio_rst < 0 ? "software reset" : "hardware reset");
+    printf("  BL  pin (BCM): %d  (%s)\n", cfg.gpio_bl,  cfg.gpio_bl  < 0 ? "always on" : "GPIO controlled");
+    printf("\n");
 
     printf("Initialising display...\n");
     if (!display.begin()) {

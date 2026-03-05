@@ -84,6 +84,11 @@ static void gpio_write(int chip_h, int pin, int level)
 {
     if (pin < 0 || chip_h < 0) return;
     lgGpioWrite(chip_h, pin, level);
+    // Allow the GPIO pin state to settle before the next SPI transaction.
+    // Without this, the DC line may not be stable when the SPI ioctl fires,
+    // causing command/data framing errors (symptom: blank or corrupted display).
+    struct timespec ts = { 0, 1000L };   // 1 microsecond
+    nanosleep(&ts, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +155,11 @@ int beepi_hal_init(const BeePiHALConfig *cfg)
     }
 
     // SPI speed
-    uint32_t speed = cfg->spi_speed_hz > 0 ? cfg->spi_speed_hz : 40000000u;
+    // Pi 3B+ SPI clock divider rounds to the nearest power-of-2 divisor of
+    // 400 MHz.  40 MHz is unreliable on jumper wires / breadboards.
+    // 20 MHz (divisor 20) is rock-solid on all Pi models.
+    // Increase to 32 MHz or 40 MHz only after confirming stable operation.
+    uint32_t speed = cfg->spi_speed_hz > 0 ? cfg->spi_speed_hz : 20000000u;
     if (ioctl(s_spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
         fprintf(stderr, "beepi_hal: SPI_IOC_WR_MAX_SPEED_HZ failed: %s\n",
                 strerror(errno));

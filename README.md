@@ -148,7 +148,7 @@ int main()
 {
     BeePiHALConfig cfg = {};
     cfg.spi_device   = "/dev/spidev0.0";
-    cfg.spi_speed_hz = 40000000;
+    cfg.spi_speed_hz = 20000000;          // 20 MHz — safe on Pi 3B+ with jumper wires
     cfg.gpio_dc      = 25;              // GPIO 25 — Pin 22
     cfg.gpio_rst     = 24;              // GPIO 24 — Pin 18  (-1 if not wired)
     cfg.gpio_bl      = 18;              // GPIO 18 — Pin 12  (-1 if always on)
