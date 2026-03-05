@@ -52,24 +52,33 @@ beepi_gc9a01a_lib/
 
 ---
 
-## Wiring (BCM pin numbers)
+## Wiring
 
-```
-GC9A01A pin   BCM (physical)   Notes
------------   ---------------  -------
-VCC           3.3V             DO NOT connect to 5V
-GND           GND
-SCL / SCLK    BCM 11  (pin 23) SPI0 clock
-SDA / MOSI    BCM 10  (pin 19) SPI0 MOSI
-RES / RST     BCM 27  (pin 13) Optional — set gpio_rst=-1 if unconnected
-DC            BCM 25  (pin 22) Required
-CS            BCM 8   (pin 24) SPI0 CE0 — handled by spidev kernel driver
-BLK / BL      BCM 18  (pin 12) Optional — set gpio_bl=-1 if hardwired HIGH
+| Display Pin | Raspberry Pi GPIO (Physical Pin) | Function |
+|---|---|---|
+| VCC | Pin 1 (3.3V) | Power — **do not connect to 5V** |
+| GND | Pin 6 (GND) | Ground |
+| SCL (CLK) | Pin 23 (GPIO 11) | SPI Clock (SCLK) |
+| SDA (MOSI) | Pin 19 (GPIO 10) | SPI Data (MOSI) |
+| CS | Pin 24 (GPIO 8) | Chip Select (CE0) |
+| DC | Pin 22 (GPIO 25) | Data / Command |
+| RES (RST) | Pin 18 (GPIO 24) | Reset — optional, set `gpio_rst=-1` if unconnected |
+| BLK (BL) | Pin 12 (GPIO 18) | Backlight — optional, set `gpio_bl=-1` if hardwired ON |
+
+> CS (Chip Select) is driven by the spidev kernel driver — **do not** drive it as a software GPIO.
+> Connect it to the hardware CE0 line (Pin 24) and leave `spi_device = "/dev/spidev0.0"` as-is.
+
+Update `gpio_rst` and `gpio_bl` in `make_config()` to match your actual wiring:
+
+```cpp
+cfg.gpio_dc  = 25;   // GPIO 25 — Pin 22
+cfg.gpio_rst = 24;   // GPIO 24 — Pin 18  (-1 if not wired)
+cfg.gpio_bl  = 18;   // GPIO 18 — Pin 12  (-1 if always on)
 ```
 
 > **Pi 5 note:** The RP1 southbridge chip moves GPIO to `/dev/gpiochip4`.
-> Change `gpio_chip = "/dev/gpiochip4"` in `make_config()` inside your example.
-> SPI and spidev paths stay the same.
+> Set `cfg.gpio_chip = "/dev/gpiochip4"` in `make_config()`.
+> Physical pin numbers, SPI device path, and BCM GPIO numbers are unchanged.
 
 ---
 
@@ -140,10 +149,9 @@ int main()
     BeePiHALConfig cfg = {};
     cfg.spi_device   = "/dev/spidev0.0";
     cfg.spi_speed_hz = 40000000;
-    cfg.gpio_dc      = 25;
-    cfg.gpio_rst     = 27;
-    cfg.gpio_bl      = 18;
-    cfg.gpio_chip    = "/dev/gpiochip0";  // Pi 5: "/dev/gpiochip4"
+    cfg.gpio_dc      = 25;              // GPIO 25 — Pin 22
+    cfg.gpio_rst     = 24;              // GPIO 24 — Pin 18  (-1 if not wired)
+    cfg.gpio_bl      = 18;              // GPIO 18 — Pin 12  (-1 if always on)
 
     BeePi_GC9A01A display(cfg);
     display.begin();

@@ -61,9 +61,9 @@ static BeePiHALConfig make_config()
     BeePiHALConfig cfg = {};
     cfg.spi_device   = "/dev/spidev0.0";
     cfg.spi_speed_hz = 40000000u;       // 40 MHz — safe on Pi 3B+/4/5/Zero2W
-    cfg.gpio_dc      = 25;              // BCM 25
-    cfg.gpio_rst     = 27;              // BCM 27  (set to -1 if not wired)
-    cfg.gpio_bl      = 18;              // BCM 18  (set to -1 if backlight is hardwired on)
+    cfg.gpio_dc      = 25;              // GPIO 25 — Pin 22
+    cfg.gpio_rst     = 24;              // GPIO 24 — Pin 18  (-1 if not wired)
+    cfg.gpio_bl      = 18;              // GPIO 18 — Pin 12  (-1 if always on)
     cfg.gpio_chip    = "/dev/gpiochip0";// Pi 3/4/Zero2W: gpiochip0
                                         // Pi 5:          gpiochip4
     return cfg;
