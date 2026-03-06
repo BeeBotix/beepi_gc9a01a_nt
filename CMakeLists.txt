@@ -216,6 +216,38 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# Video player stress test: video_to_frames + videoview_osd
+# ---------------------------------------------------------------------------
+
+set(INPUT_VIDEO "${CMAKE_SOURCE_DIR}/assets/input.mp4")
+set(VIDEO_BIN   "${CMAKE_SOURCE_DIR}/assets/video.bin")
+set(VIDEO_PY    "${CMAKE_SOURCE_DIR}/assets/video_to_frames.py")
+
+if(EXISTS "${INPUT_VIDEO}" AND Python3_FOUND)
+    add_custom_command(
+        OUTPUT  "${VIDEO_BIN}"
+        COMMAND ${Python3_EXECUTABLE} "${VIDEO_PY}"
+                "${INPUT_VIDEO}" "${VIDEO_BIN}" --fps 50
+        DEPENDS "${INPUT_VIDEO}" "${VIDEO_PY}"
+        COMMENT "Converting input.mp4 -> video.bin (50 fps, 240x240)"
+    )
+    add_custom_target(video_bin DEPENDS "${VIDEO_BIN}")
+
+    add_executable(videoplay
+        example/videoview_osd.cpp
+    )
+    add_dependencies(videoplay video_bin)
+    target_include_directories(videoplay PRIVATE ${CMAKE_SOURCE_DIR}/lib)
+    target_compile_definitions(videoplay PRIVATE
+        DEFAULT_BIN_PATH="${CMAKE_SOURCE_DIR}/assets/video.bin"
+    )
+    target_link_libraries(videoplay PRIVATE beepi_gc9a01a_nt)
+    message(STATUS "videoplay: enabled  (input: ${INPUT_VIDEO})")
+else()
+    message(STATUS "videoplay: skipped  (place assets/input.mp4 to enable)")
+endif()
+
+# ---------------------------------------------------------------------------
 # Install targets (optional)
 # ---------------------------------------------------------------------------
 
