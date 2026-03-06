@@ -152,6 +152,69 @@ else()
     message(STATUS "imgview: enabled  (logo: ${LOGO_PNG})")
 endif()
 
+
+# ---------------------------------------------------------------------------
+# GIF player: videoview
+#
+# ocean.gif is converted to a binary at build time by gif_to_frames.py.
+# The binary is mmap'd at runtime — no large C arrays, no compiler OOM.
+# ---------------------------------------------------------------------------
+
+set(OCEAN_GIF  "${CMAKE_CURRENT_SOURCE_DIR}/assets/ocean.gif")
+set(OCEAN_BIN  "${CMAKE_CURRENT_SOURCE_DIR}/assets/ocean.bin")
+set(GIF_CONV   "${CMAKE_CURRENT_SOURCE_DIR}/assets/gif_to_frames.py")
+
+if(NOT EXISTS ${OCEAN_GIF})
+    message(WARNING "assets/ocean.gif not found — videoview will not be built.")
+elseif(NOT Python3_FOUND)
+    message(WARNING "Python3 not found — videoview will not be built.")
+else()
+    add_custom_command(
+        OUTPUT  ${OCEAN_BIN}
+        COMMAND ${Python3_EXECUTABLE} ${GIF_CONV} ${OCEAN_GIF} ${OCEAN_BIN}
+        DEPENDS ${OCEAN_GIF} ${GIF_CONV}
+        COMMENT "Converting ocean.gif -> ocean.bin"
+        VERBATIM
+    )
+    add_custom_target(ocean_bin DEPENDS ${OCEAN_BIN})
+
+    add_executable(videoview
+        example/videoview.cpp
+    )
+    add_dependencies(videoview ocean_bin)
+
+    target_include_directories(videoview PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib
+    )
+
+    target_compile_definitions(videoview PRIVATE
+        OCEAN_BIN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets/ocean.bin"
+    )
+
+    target_link_libraries(videoview PRIVATE
+        beepi_gc9a01a_nt
+    )
+
+    message(STATUS "videoview: enabled  (gif: ${OCEAN_GIF})")
+
+    # GIF player with FPS OSD overlay
+    add_executable(videoview_osd
+        example/videoview_osd.cpp
+    )
+    add_dependencies(videoview_osd ocean_bin)
+
+    target_include_directories(videoview_osd PRIVATE
+        ${CMAKE_SOURCE_DIR}/lib
+    )
+    target_compile_definitions(videoview_osd PRIVATE
+        DEFAULT_BIN_PATH="${CMAKE_SOURCE_DIR}/assets/ocean.bin"
+    )
+    target_link_libraries(videoview_osd PRIVATE
+        beepi_gc9a01a_nt
+    )
+    message(STATUS "videoview_osd: enabled")
+endif()
+
 # ---------------------------------------------------------------------------
 # Install targets (optional)
 # ---------------------------------------------------------------------------
