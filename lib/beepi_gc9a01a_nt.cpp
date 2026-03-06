@@ -288,14 +288,10 @@ void BeePi_GC9A01A::fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
     _setAddrWindow((uint16_t)x, (uint16_t)y,
                    (uint16_t)(x + w - 1), (uint16_t)(y + h - 1));
 
-    // Build a one-row scratch buffer and repeat for each row
-    // For solid fills, build 1 row of w pixels, send h times
     size_t row_pixels = (size_t)w;
-    // Use stack for small fills, heap for large ones
     uint16_t *row = (uint16_t *)malloc(row_pixels * sizeof(uint16_t));
     if (!row) return;
     for (size_t i = 0; i < row_pixels; i++) row[i] = color;
-
     for (int16_t r = 0; r < h; r++) {
         beepi_hal_write_pixels(row, row_pixels);
     }

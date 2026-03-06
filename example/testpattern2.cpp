@@ -135,7 +135,7 @@ static void fb_arc(int cx, int cy, int r, float a0, float a1, uint16_t c, int w)
     for (int i=0; i<=steps; i++) {
         float a = a0 + (a1-a0)*i/steps;
         for (int dr=0; dr<w; dr++)
-            fb_px(cx+(int)((r-dr)*cosf(a)), cy+(int)((r-dr)*sinf(a)), c);
+            fb_px(cx-(int)((r-dr)*cosf(a)), cy+(int)((r-dr)*sinf(a)), c);
     }
 }
 
@@ -220,8 +220,8 @@ static void scene_clock(BeePi_GC9A01A &d)
             ? BEEPI_WHITE
             : BeePi_GC9A01A::dimColor(BEEPI_WHITE, 100);
 
-        int x0 = CX+(int)(r0*cosf(a)), y0 = CY+(int)(r0*sinf(a));
-        int x1 = CX+(int)(r1*cosf(a)), y1 = CY+(int)(r1*sinf(a));
+        int x0 = CX-(int)(r0*cosf(a)), y0 = CY+(int)(r0*sinf(a));
+        int x1 = CX-(int)(r1*cosf(a)), y1 = CY+(int)(r1*sinf(a));
         fline(x0,y0,x1,y1,tc);
         if(tw>1){
             fline(x0+1,y0,x1+1,y1,tc); fline(x0-1,y0,x1-1,y1,tc);
@@ -232,7 +232,7 @@ static void scene_clock(BeePi_GC9A01A &d)
     // 4 cardinal dots at 12/3/6/9 positions (larger)
     for (int q = 0; q < 4; q++) {
         float a = q * PI2 / 4.0f - HALF_PI;
-        int cx2 = CX+(int)(104*cosf(a)), cy2 = CY+(int)(104*sinf(a));
+        int cx2 = CX-(int)(104*cosf(a)), cy2 = CY+(int)(104*sinf(a));
         for(int dy2=-3;dy2<=3;dy2++)
             for(int dx2=-3;dx2<=3;dx2++)
                 if(dx2*dx2+dy2*dy2<=9) fpx(cx2+dx2,cy2+dy2,BEEPI_WHITE);
@@ -266,22 +266,22 @@ static void scene_clock(BeePi_GC9A01A &d)
         float sa = (sec  * PI2 / 60.0f) - HALF_PI;
 
         // -- Hour hand (fat, white, length 55) --
-        int hx = CX + (int)(55 * cosf(ha));
+        int hx = CX - (int)(55 * cosf(ha));
         int hy = CY + (int)(55 * sinf(ha));
         fb_thick_line(CX, CY, hx, hy, BEEPI_WHITE, 5);
         // Rounded tip
         fb_fcircle(hx, hy, 3, BEEPI_WHITE);
 
         // -- Minute hand (medium, light grey, length 82) --
-        int mx = CX + (int)(82 * cosf(ma));
+        int mx = CX - (int)(82 * cosf(ma));
         int my = CY + (int)(82 * sinf(ma));
         fb_thick_line(CX, CY, mx, my, BEEPI_LIGHTGREY, 3);
         fb_fcircle(mx, my, 2, BEEPI_LIGHTGREY);
 
         // -- Second hand (thin, red, length 95 + 15 tail) --
-        int sx = CX + (int)(95 * cosf(sa));
+        int sx = CX - (int)(95 * cosf(sa));
         int sy = CY + (int)(95 * sinf(sa));
-        int tx = CX - (int)(18 * cosf(sa));   // counterbalance tail
+        int tx = CX + (int)(18 * cosf(sa));   // counterbalance tail
         int ty = CY - (int)(18 * sinf(sa));
         fb_thick_line(tx, ty, sx, sy, BEEPI_RED, 2);
         // Small lollipop at tip
@@ -339,8 +339,8 @@ static void scene_timer(BeePi_GC9A01A &d)
             // Second tick marks
             for (int s=0; s<=5; s++) {
                 float ta = -(float)(M_PI/2) + s*PI2/5.0f;
-                fb_line(CX+(int)(105*cosf(ta)), CY+(int)(105*sinf(ta)),
-                        CX+(int)(116*cosf(ta)), CY+(int)(116*sinf(ta)),
+                fb_line(CX-(int)(105*cosf(ta)), CY+(int)(105*sinf(ta)),
+                        CX-(int)(116*cosf(ta)), CY+(int)(116*sinf(ta)),
                         BEEPI_WHITE);
             }
 
@@ -386,7 +386,7 @@ static void scene_rainbow(BeePi_GC9A01A &d)
             for (int x=0; x<240; x++) {
                 int dx=x-120, dy=y-120;
                 if (dx*dx+dy*dy > 118*118) { fb[y*240+x]=BEEPI_BLACK; continue; }
-                float angle = atan2f((float)dy,(float)dx);
+                float angle = atan2f((float)dy,-(float)dx);  // mirror X
                 int hue = (int)(angle*180.0f/(float)M_PI + 180.0f + hue_offset) % 360;
                 float dist = sqrtf((float)(dx*dx+dy*dy));
                 uint8_t bright = (uint8_t)(130 + dist*125/118);
@@ -424,8 +424,8 @@ static void scene_balls(BeePi_GC9A01A &d)
         float a  = i*PI2/N;
         float sp = 2.0f+(i%5)*0.5f;
         float va = a+(float)(M_PI/2)+(i%2?0.25f:-0.25f);
-        balls[i] = { 120+40*cosf(a), 120+40*sinf(a),
-                     sp*cosf(va), sp*sinf(va),
+        balls[i] = { 120-40*cosf(a), 120+40*sinf(a),
+                     -sp*cosf(va), sp*sinf(va),
                      6+(i%4)*2, hue565(i*36) };
     }
 
