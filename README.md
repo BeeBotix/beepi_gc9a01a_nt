@@ -4,142 +4,156 @@
 round TFT display, targeting Raspberry Pi Linux. No Arduino runtime, no
 Adafruit dependency on Linux. Clean HAL layer keeps it portable.
 
+> For full usage walkthroughs see [UserGuide.md](UserGuide.md).
+
 ---
 
 ## File tree
 
 ```
-beepi_gc9a01a_lib/
+beepi_gc9a01a_nt/
 │
-├── CMakeLists.txt                  Build system (cmake)
+├── CMakeLists.txt                  Build system (CMake 3.16+)
 ├── README.md                       This file
+├── UserGuide.md                    Step-by-step usage guide
 │
-├── lib/                            ← Include this whole directory
-│   │
-│   ├── beepi_gc9a01a_nt.h          PUBLIC API — include this in your code
-│   ├── beepi_gc9a01a_nt.cpp        Implementation (all drawing, init seq, font)
-│   │
+├── lib/                            Core library — include this directory
+│   ├── beepi_gc9a01a_nt.h          PUBLIC API — the only header you need
+│   ├── beepi_gc9a01a_nt.cpp        Implementation (drawing, init, font)
 │   ├── hal/
-│   │   ├── beepi_hal.h             HAL interface (platform-agnostic contract)
-│   │   ├── beepi_hal_linux.cpp     RPi implementation: lgpio + spidev ioctl
+│   │   ├── beepi_hal.h             HAL interface (platform-agnostic)
+│   │   ├── beepi_hal_linux.cpp     RPi: lgpio + spidev ioctl
 │   │   └── beepi_hal_arduino.cpp   Arduino shim (wraps Adafruit_GC9A01A)
-│   │
 │   └── fonts/
-│       └── beepi_font5x8.h         Built-in 5×8 ASCII bitmap font (no deps)
+│       └── beepi_font5x8.h         Built-in 5×8 ASCII bitmap font
 │
 ├── example/
-│   ├── testpattern.cpp             Milestone 1 — 9 visual test patterns
-│   ├── imgview.cpp                 Milestone 2 — static image display
-│   └── videoview.cpp               Milestone 2 — animated GIF playback
+│   ├── testpattern.cpp             9 visual test patterns
+│   ├── testpattern2.cpp            Extended pattern set
+│   ├── imgview.cpp                 Static PNG image display
+│   ├── videoview.cpp               Animated GIF / video playback
+│   └── videoview_osd.cpp           Video playback with live FPS OSD overlay
 │
 └── assets/
-    ├── media2hex.py                PNG/GIF → C RGB565 header converter
+    ├── png_to_rgb565.py            PNG → C header (uint16_t RGB565 array)
+    ├── gif_to_frames.py            Animated GIF → BPGF binary (Pillow-based)
+    ├── video_to_frames.py          Any video (MP4/MKV/AVI…) → BPGF binary
     ├── img.png                     Place your 240×240 test image here
-    └── video.gif                   Place your 240×240 test GIF here
+    ├── ocean.gif                   Place your test GIF here
+    └── input.mp4                   Place your test video here (triggers videoplay target)
 ```
 
 ---
 
 ## Supported platforms
 
-| Board | OS | Arch | SPI | GPIO chip |
-|---|---|---|---|---|
-| Raspberry Pi 3B+ | Raspberry Pi OS 32-bit (Bullseye/Bookworm) | ARMv8 32-bit | `/dev/spidev0.0` | `/dev/gpiochip0` |
-| Raspberry Pi Zero 2W | Raspberry Pi OS 32-bit or 64-bit | ARMv8 32/64 | `/dev/spidev0.0` | `/dev/gpiochip0` |
-| Raspberry Pi 4B | Raspberry Pi OS 64-bit (Bookworm recommended) | ARMv8 64-bit | `/dev/spidev0.0` | `/dev/gpiochip0` |
-| Raspberry Pi 5 | Raspberry Pi OS 64-bit Bookworm | ARMv8 64-bit | `/dev/spidev0.0` | **`/dev/gpiochip4`** |
-| Arduino / ESP32 | Arduino IDE / PlatformIO | any | hardware SPI | Adafruit driver |
+| Board | OS | SPI device | GPIO chip |
+|---|---|---|---|
+| Raspberry Pi 3B+ | Pi OS 32-bit Bullseye / Bookworm | `/dev/spidev0.0` | `/dev/gpiochip0` |
+| Raspberry Pi Zero 2W | Pi OS 32 or 64-bit | `/dev/spidev0.0` | `/dev/gpiochip0` |
+| Raspberry Pi 4B | Pi OS 64-bit Bookworm (recommended) | `/dev/spidev0.0` | `/dev/gpiochip0` |
+| Raspberry Pi 5 | Pi OS 64-bit Bookworm | `/dev/spidev0.0` | **`/dev/gpiochip4`** |
+| Arduino / ESP32 | Arduino IDE / PlatformIO | hardware SPI | Adafruit driver |
 
 ---
 
 ## Wiring
 
-| Display Pin | Raspberry Pi GPIO (Physical Pin) | Function |
-|---|---|---|
-| VCC | Pin 1 (3.3V) | Power — **do not connect to 5V** |
-| GND | Pin 6 (GND) | Ground |
-| SCL (CLK) | Pin 23 (GPIO 11) | SPI Clock (SCLK) |
-| SDA (MOSI) | Pin 19 (GPIO 10) | SPI Data (MOSI) |
-| CS | Pin 24 (GPIO 8) | Chip Select (CE0) |
-| DC | Pin 22 (GPIO 25) | Data / Command |
-| RES (RST) | Pin 18 (GPIO 24) | Reset — optional, set `gpio_rst=-1` if unconnected |
-| BLK (BL) | Pin 12 (GPIO 18) | Backlight — optional, set `gpio_bl=-1` if hardwired ON |
+| Display Pin | Raspberry Pi GPIO | Physical Pin | Function |
+|---|---|---|---|
+| VCC | 3.3 V | Pin 1 | Power — **3.3 V only, never 5 V** |
+| GND | GND | Pin 6 | Ground |
+| SCL (CLK) | GPIO 11 | Pin 23 | SPI Clock |
+| SDA (MOSI) | GPIO 10 | Pin 19 | SPI Data |
+| CS | GPIO 8 (CE0) | Pin 24 | Chip Select (kernel-driven) |
+| DC | GPIO 25 | Pin 22 | Data / Command |
+| RES (RST) | GPIO 24 | Pin 18 | Reset (set `gpio_rst=-1` if unconnected) |
+| BLK (BL) | GPIO 18 | Pin 12 | Backlight (set `gpio_bl=-1` if hardwired ON) |
 
-> CS (Chip Select) is driven by the spidev kernel driver — **do not** drive it as a software GPIO.
-> Connect it to the hardware CE0 line (Pin 24) and leave `spi_device = "/dev/spidev0.0"` as-is.
+> CS is driven by the spidev kernel driver. Do not drive it as a software GPIO.
 
-Update `gpio_rst` and `gpio_bl` in `make_config()` to match your actual wiring:
-
-```cpp
-cfg.gpio_dc  = 25;   // GPIO 25 — Pin 22
-cfg.gpio_rst = 24;   // GPIO 24 — Pin 18  (-1 if not wired)
-cfg.gpio_bl  = 18;   // GPIO 18 — Pin 12  (-1 if always on)
-```
-
-> **Pi 5 note:** The RP1 southbridge chip moves GPIO to `/dev/gpiochip4`.
-> Set `cfg.gpio_chip = "/dev/gpiochip4"` in `make_config()`.
-> Physical pin numbers, SPI device path, and BCM GPIO numbers are unchanged.
+> **Pi 5:** GPIO moved to `/dev/gpiochip4` due to the RP1 southbridge.
+> Set `cfg.gpio_chip = "/dev/gpiochip4"`. Pin numbers and SPI path unchanged.
 
 ---
 
 ## Dependencies
 
 ```bash
-# Install lgpio (works on ALL Pi models including Pi 5)
+# lgpio — GPIO library (works on all Pi models including Pi 5)
 sudo apt update
-sudo apt install cmake build-essential liblgpio-dev
+sudo apt install liblgpio-dev
 
-# Enable SPI kernel module if not already enabled
+# ffmpeg + Pillow — required for asset converters only
+sudo apt install ffmpeg python3-pil
+
+# Enable SPI if not already on
 sudo raspi-config   # Interface Options → SPI → Enable
-# or manually:
-echo "dtparam=spi=on" | sudo tee -a /boot/firmware/config.txt
-sudo reboot
+# or:
+echo "dtparam=spi=on" | sudo tee -a /boot/firmware/config.txt && sudo reboot
 ```
-
-> **Why lgpio instead of pigpio?**
-> pigpio accesses GPIO via direct `/dev/mem` register mapping. The Raspberry
-> Pi 5 uses a new RP1 southbridge chip — its GPIO registers are not at the
-> BCM283x addresses that pigpio expects. lgpio uses the standard Linux GPIO
-> character device interface (`/dev/gpiochipN`) which works on all Pi models
-> via the same code path.
 
 ---
 
 ## Building
 
 ```bash
-# Clone / copy the library to your Pi
-cd beepi_gc9a01a_lib
-
-# Configure
+cd beepi_gc9a01a_nt
 mkdir build && cd build
 cmake ..
-
-# Build (uses all CPU cores)
 make -j$(nproc)
-
-# Run test patterns
-sudo ./testpattern
 ```
 
-### Cross-compilation (build on x86 laptop, run on Pi)
+### Targets built by default
 
-```bash
-# Install ARM toolchains
-sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu    # for Pi 64-bit
-sudo apt install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf # for Pi 32-bit
+| Target | Binary | Description |
+|---|---|---|
+| `testpattern` | `./testpattern` | 9-step visual self-test |
+| `testpattern2` | `./testpattern2` | Extended pattern set |
+| `imgview` | `./imgview` | Display `assets/img.png` |
+| `ocean_bin` | `assets/ocean.bin` | Auto-converts `ocean.gif` → BPGF |
+| `videoview` | `./videoview` | GIF playback (no OSD) |
+| `videoview_osd` | `./videoview_osd` | GIF playback + live FPS counter |
+| `videoplay` | `./videoplay` | Video playback (only if `assets/input.mp4` present) |
 
-# 64-bit cross build
-mkdir build64 && cd build64
-cmake .. \
-  -DCMAKE_TOOLCHAIN_FILE=../toolchain-aarch64.cmake \
-  -DCMAKE_SYSTEM_PROCESSOR=aarch64
-make -j$(nproc)
+---
+
+## Performance
+
+All measurements on Raspberry Pi 4B, SPI at 62.5 MHz.
+
+| Mode | Achieved FPS | Notes |
+|---|---|---|
+| `pushFrame` raw throughput | ~68 fps | Physics limit: 240×240×16 bits ÷ 62.5 MHz |
+| GIF playback (`videoview`) | 20 fps | Throttled by GIF frame duration metadata |
+| Video playback (`videoplay`) | ~50 fps | ffmpeg-resampled to target fps |
+| OSD overlay (`videoview_osd`) | ~50 fps | FPS counter drawn in fb[] before pushFrame, negligible overhead |
+
+To push higher fps, increase `spi_speed_hz`. The GC9A01A and RPi 4 SPI bus
+are rated up to 125 MHz; 62.5 MHz is the tested-stable value.
+
+---
+
+## BPGF binary format
+
+Both `gif_to_frames.py` and `video_to_frames.py` produce this format:
+
+```
+Offset   Size    Field
+0        4       Magic: "BPGF"
+4        2       Width  (always 240)
+6        2       Height (always 240)
+8        4       frame_count  (uint32)
+12       2       avg_fps      (uint16)
+14       N×2     per-frame duration_ms[]  (uint16 each)
+?        pad     Zero-padding to next 512-byte boundary
+data_off N×115200  Raw pixel data, one frame after another
+                   Each frame: 240×240×2 = 115200 bytes, big-endian RGB565
 ```
 
 ---
 
-## Quick start code
+## Quick start
 
 ```cpp
 #include "beepi_gc9a01a_nt.h"
@@ -148,23 +162,18 @@ int main()
 {
     BeePiHALConfig cfg = {};
     cfg.spi_device   = "/dev/spidev0.0";
-    cfg.spi_speed_hz = 20000000;          // 20 MHz — safe on Pi 3B+ with jumper wires
-    cfg.gpio_dc      = 25;              // GPIO 25 — Pin 22
-    cfg.gpio_rst     = 24;              // GPIO 24 — Pin 18  (-1 if not wired)
-    cfg.gpio_bl      = 18;              // GPIO 18 — Pin 12  (-1 if always on)
+    cfg.spi_speed_hz = 62500000u;
+    cfg.gpio_dc      = 25;
+    cfg.gpio_rst     = 24;
+    cfg.gpio_bl      = 18;
+    cfg.gpio_chip    = "/dev/gpiochip0";
 
     BeePi_GC9A01A display(cfg);
-    display.begin();
+    if (!display.begin()) return 1;
+
     display.fill(BEEPI_BLACK);
-
-    // Reticle + HUD
+    display.drawLabel("BeeBotix", 60, 112, BEEPI_GREEN, 2);
     display.drawReticle(120, 120, 30, 8, BEEPI_RETICLE_CROSS_GAP, BEEPI_GREEN, 2);
-    display.drawBadge("RNG", 847, "m",  8,  8, BEEPI_GREEN, BEEPI_BLACK);
-    display.drawBarH(72, 218, 96, 7, 6, 20, BEEPI_GREEN, BEEPI_DARKGREY, BEEPI_WHITE);
-
-    // Camera frame push (your RGB565 buffer from V4L2/GStreamer appsink)
-    // uint16_t frame[240*240] = { ... };
-    // display.pushFrame(frame);
 
     pause();
     display.end();
@@ -173,110 +182,18 @@ int main()
 
 ---
 
-## API reference
+## Milestones achieved
 
-### Configuration
-
-```cpp
-BeePiHALConfig cfg = {};
-cfg.spi_device   = "/dev/spidev0.0";   // SPI bus
-cfg.spi_speed_hz = 40000000;           // 40 MHz — safe on all Pi
-cfg.gpio_dc      = 25;                 // BCM pin
-cfg.gpio_rst     = 27;                 // BCM pin (-1 = skip)
-cfg.gpio_bl      = 18;                 // BCM pin (-1 = skip)
-cfg.gpio_chip    = "/dev/gpiochip0";   // Pi 5: "/dev/gpiochip4"
-```
-
-### Lifecycle
-
-| Method | Description |
-|---|---|
-| `begin()` | Init HAL, reset display, run init sequence. Returns `false` on error. |
-| `end()` | Release SPI fd and GPIO handles. |
-| `setDisplayOn(bool)` | Toggle panel output (DISPON/DISPOFF command). |
-| `invertDisplay(bool)` | Invert all colours. |
-| `setRotation(0-3)` | Rotate 90° per step. |
-| `setBacklight(bool)` | Drive BL GPIO (if configured). |
-
-### Drawing primitives
-
-`fill`, `fillRect`, `drawRect`, `drawPixel`, `drawLine`, `drawHLine`, `drawVLine`,
-`drawCircle`, `fillCircle`, `drawTriangle`, `fillTriangle`,
-`drawRoundRect`, `fillRoundRect`
-
-### Text / OSD
-
-| Method | Description |
-|---|---|
-| `drawLabel(text, x, y, color, scale, bg)` | Draw at pixel position. `color==bg` → transparent background. |
-| `drawLabelAnchored(text, anchor, margin, color, scale, bg)` | Anchor to corner or centre. |
-| `drawInt(value, suffix, x, y, color, scale)` | Integer + unit string. |
-| `drawFloat(value, decimals, suffix, x, y, color, scale)` | Float with fixed decimals. |
-
-`BeePiAnchor`: `BEEPI_ANCHOR_TOP_LEFT`, `TOP_RIGHT`, `BOTTOM_LEFT`, `BOTTOM_RIGHT`, `CENTER`
-
-### HUD / reticle
-
-| Method | Description |
-|---|---|
-| `drawReticle(cx, cy, size, gap, style, color, thick)` | Targeting reticle. |
-| `drawBearingArc(bearing, fovDeg, r, arcColor, tickColor)` | Compass arc + tick. |
-| `drawBarH(x,y,w,h, value, maxVal, barColor, bgColor, border)` | Horizontal bar. |
-| `drawBadge(label, value, unit, x, y, fgColor, bgColor)` | Two-row value badge. |
-
-`BeePiReticleStyle`: `BEEPI_RETICLE_CROSSHAIR`, `CROSS_GAP`, `CIRCLE_CROSS`, `DOT`
-
-### Camera / image push
-
-| Method | Description |
-|---|---|
-| `pushFrame(buf)` | Full 240×240 RGB565 frame from RAM buffer. One `ioctl` DMA transfer. |
-| `pushRegion(x,y,w,h, pixels)` | Partial dirty-rect update. |
-| `drawImage(x,y, bitmap, w, h)` | Arbitrary-size RGB565 bitmap. |
-
-### Colour utilities (static)
-
-```cpp
-uint16_t col = BeePi_GC9A01A::rgb(255, 128, 0);         // RGB888 → RGB565
-uint16_t mid = BeePi_GC9A01A::lerpColor(BEEPI_RED, BEEPI_BLUE, 128); // 50%
-uint16_t dim = BeePi_GC9A01A::dimColor(BEEPI_GREEN, 100);             // ~40%
-// compile-time macro:
-uint16_t col2 = BEEPI_RGB(255, 128, 0);
-```
-
----
-
-## Integrating a camera feed
-
-With GStreamer `appsink` (your existing pipeline on FURY V2 / BeeBotix camera):
-
-```cpp
-// In GStreamer appsink callback — framebuf is the RGB565 data pointer
-// from a GstMapInfo after converting via videoconvert + video/x-raw,format=RGB16
-void on_new_sample(uint8_t *data, size_t size)
-{
-    if (size == 240 * 240 * 2) {
-        display.pushFrame(reinterpret_cast<const uint16_t *>(data));
-    }
-}
-```
-
-The `pushFrame` path sets the full address window and fires a single
-`ioctl(SPI_IOC_MESSAGE)` call, transferring all 115,200 bytes in one
-kernel DMA shot. At 40 MHz SPI, a full frame transfer takes ~23 ms
-(≈ 43 fps theoretical maximum, real fps gated by your camera source).
-
----
-
-## Milestone roadmap
-
-| Milestone | Status | Files |
+| Milestone | Description | Key files |
 |---|---|---|
-| M1 | Done | `/lib/` complete + `testpattern.cpp` |
-| M2 | Planned | `imgview.cpp`, `videoview.cpp`, `/assets/` usage examples |
+| M1 | Core library, HAL, font, 9 test patterns | `lib/`, `testpattern.cpp` |
+| M2 | PNG image display via C header | `imgview.cpp`, `png_to_rgb565.py` |
+| M3 | Animated GIF playback (BPGF, mmap, per-frame timing) | `videoview.cpp`, `gif_to_frames.py` |
+| M4 | Live FPS OSD overlay (white text, solid bar, correct orientation) | `videoview_osd.cpp` |
+| M5 | Full video playback — any format, centre-crop, 50 fps stress test | `video_to_frames.py`, `videoplay` target |
 
 ---
 
 ## Licence
 
-BeeBotix Autonomous Systems internal use.
+BeeBotix Autonomous Systems — internal use.

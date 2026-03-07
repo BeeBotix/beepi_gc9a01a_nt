@@ -117,6 +117,7 @@ target_link_libraries(testpattern2 PRIVATE
 # ---------------------------------------------------------------------------
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
+find_package(Threads REQUIRED)
 if(NOT Python3_FOUND)
     message(WARNING
         "Python3 not found — imgview will not be built.\n"
@@ -246,6 +247,16 @@ if(EXISTS "${INPUT_VIDEO}" AND Python3_FOUND)
 else()
     message(STATUS "videoplay: skipped  (place assets/input.mp4 to enable)")
 endif()
+
+# ---------------------------------------------------------------------------
+# camview — live USB camera feed
+# ---------------------------------------------------------------------------
+
+add_executable(camview
+    example/camview.cpp
+)
+target_include_directories(camview PRIVATE ${CMAKE_SOURCE_DIR}/lib)
+target_link_libraries(camview PRIVATE beepi_gc9a01a_nt Threads::Threads)
 
 # ---------------------------------------------------------------------------
 # Install targets (optional)
