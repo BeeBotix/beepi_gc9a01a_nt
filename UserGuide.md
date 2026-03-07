@@ -17,7 +17,8 @@ new setup, or jump directly to the feature you need.
 7. [Playing a video file](#7-playing-a-video-file)
 8. [FPS OSD overlay](#8-fps-osd-overlay)
 9. [Drawing primitives and HUD elements](#9-drawing-primitives-and-hud-elements)
-10. [Integrating a live camera feed](#10-integrating-a-live-camera-feed)
+9. [Live USB camera feed (camview)](#9-live-usb-camera-feed-camview)
+10. [Integrating a GStreamer camera feed](#10-integrating-a-gstreamer-camera-feed)
 11. [Configuration reference](#11-configuration-reference)
 12. [Troubleshooting](#12-troubleshooting)
 
@@ -439,7 +440,122 @@ uint16_t dim = BeePi_GC9A01A::dimColor(BEEPI_GREEN, 80);  // ~31% brightness
 
 ---
 
-## 10. Integrating a live camera feed
+## 9. Live USB camera feed (camview)
+
+`camview` streams directly from a USB webcam to the display in real time.
+It uses V4L2 (the Linux kernel video API) with no extra libraries beyond what
+the kernel already provides.
+
+### What you need
+
+- USB webcam recognised by Linux (any UVC-compliant camera works)
+- Camera appearing as `/dev/video0` (or pass a different node as argv)
+- No extra apt packages beyond `liblgpio-dev` already installed
+
+### Build and run
+
+```bash
+cd beepi_gc9a01a_nt/build
+cmake ..
+make camview -j$(nproc)
+
+# Plug in USB webcam, then:
+sudo ./camview              # default: /dev/video0
+sudo ./camview /dev/video1  # if camera is on a different node
+```
+
+### What it does
+
+```
+USB webcam  640x480 YUYV @ 30fps
+     |
+     |  V4L2 DQBUF — grab raw frame from kernel mmap buffer
+     v
+YUYV 640x480  (614400 bytes, 2 bytes per pixel)
+     |
+     |  Centre-crop 480x480  (skip 80px left and right)
+     |  2:1 downsample to 240x240  (fixed-point, one pass)
+     |  BT.601 YUV -> RGB -> big-endian RGB565
+     v
+RGB565 240x240  (115200 bytes)
+     |
+     |  Row-flip  (MY orientation correction)
+     |  FPS OSD bar drawn at screen top
+     v
+pushFrame -> SPI -> display
+```
+
+### Threading model
+
+Two threads run fully independently:
+
+**Capture thread** — calls `select()` blocking until V4L2 has a frame, grabs
+it with `DQBUF`, runs the YUYV conversion, writes into a ping-pong slot, flips
+the atomic write index, sets `g_fresh = true`, returns the buffer with `QBUF`.
+
+**Display thread** — spin-waits on `g_fresh` with 0.5 ms yield sleeps, reads
+from the opposite ping-pong slot (the one capture is not writing to), row-flips,
+draws OSD, calls `pushFrame`.
+
+No mutex is needed in the hot path — a single `std::atomic<int>` index swap is
+the only synchronisation. If the camera is slow the display shows the last good
+frame. If the display is slow the camera overwrites the slot and the display
+picks up the newest frame on its next iteration — frames are dropped, not queued.
+
+### Terminal output
+
+Every second both fps counters are printed:
+
+```
+  Capture: 30 fps   Display: 30 fps
+```
+
+The OSD bar on the display shows display fps (`FPS:30`).
+
+### Expected performance
+
+| Camera fps | Display fps | Notes |
+|---|---|---|
+| 30 fps (typical USB webcam) | 30 fps | SPI has spare headroom |
+| 60 fps (high-speed webcam) | 30–60 fps | Display keeps up; actual rate printed live |
+
+### YUYV pixel format and the bswap contract
+
+YUYV is the standard output format for USB webcams. Every 4 bytes encodes
+2 horizontal pixels:
+
+```
+Byte 0: Y0  luma for pixel 0
+Byte 1: U   chroma Cb, shared by both pixels
+Byte 2: Y1  luma for pixel 1
+Byte 3: V   chroma Cr, shared by both pixels
+```
+
+BT.601 converts YUV to RGB using integer arithmetic (no floats):
+
+```cpp
+C = Y - 16;   D = U - 128;   E = V - 128;
+R = clip((298*C         + 409*E + 128) >> 8);
+G = clip((298*C - 100*D - 208*E + 128) >> 8);
+B = clip((298*C + 516*D         + 128) >> 8);
+```
+
+After converting to RGB the result is packed as standard LE RGB565, then
+**byte-swapped** before storing in the frame buffer:
+
+```cpp
+uint16_t px = ((R & 0xF8) << 8) | ((G & 0xFC) << 3) | (B >> 3);
+return (uint16_t)((px >> 8) | (px << 8));   // bswap to big-endian
+```
+
+This is required because `pushFrame` expects big-endian RGB565 — the same
+format as all `BEEPI_*` colour constants. Without this swap colours are
+completely wrong (channel rotation visible as red → green, green → yellow,
+blue → red).
+
+---
+
+## 10. Integrating a GStreamer camera feed
 
 `pushFrame` transfers a full 240×240 RGB565 buffer in a single SPI DMA
 call — this is the primary path for live camera display.
@@ -603,6 +719,24 @@ pip3 install Pillow --break-system-packages
 - Check that the bin file is on a fast storage path (SD card Class 10 or USB SSD).
 - For the video converter, verify that ffmpeg resampled to the target fps:
   the terminal output shows `target X fps` and `Display FPS: X` should match.
+
+### Live camera colours are wrong (channel rotation)
+
+The most common symptom is red → green, green → yellow, blue → red. This means
+the YUV→RGB565 output is not byte-swapped before being stored in the frame
+buffer. `pushFrame` requires big-endian RGB565. Verify the pack in
+`yuv_to_rgb565` ends with:
+
+```cpp
+uint16_t px = ((R & 0xF8u) << 8) | ((G & 0xFCu) << 3) | (B >> 3);
+return (uint16_t)((px >> 8) | (px << 8));   // bswap — required for pushFrame
+```
+
+### Live camera colours are tinted but not fully wrong
+
+U and V bytes may be swapped. Some cameras output YVYU (byte order Y0 V Y1 U)
+instead of YUYV (Y0 U Y1 V). In `yuyv_crop_scale_to_rgb565` swap the read
+indices: `u = srow[base+3]`, `v = srow[base+1]`.
 
 ### `begin()` returns false
 

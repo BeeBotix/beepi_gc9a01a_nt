@@ -32,7 +32,8 @@ beepi_gc9a01a_nt/
 │   ├── testpattern2.cpp            Extended pattern set
 │   ├── imgview.cpp                 Static PNG image display
 │   ├── videoview.cpp               Animated GIF / video playback
-│   └── videoview_osd.cpp           Video playback with live FPS OSD overlay
+│   ├── videoview_osd.cpp           Video playback with live FPS OSD overlay
+│   └── camview.cpp                 Live USB camera feed with FPS OSD
 │
 └── assets/
     ├── png_to_rgb565.py            PNG → C header (uint16_t RGB565 array)
@@ -115,6 +116,7 @@ make -j$(nproc)
 | `videoview` | `./videoview` | GIF playback (no OSD) |
 | `videoview_osd` | `./videoview_osd` | GIF playback + live FPS counter |
 | `videoplay` | `./videoplay` | Video playback (only if `assets/input.mp4` present) |
+| `camview` | `./camview` | Live USB camera feed (plug in USB webcam) |
 
 ---
 
@@ -128,6 +130,7 @@ All measurements on Raspberry Pi 4B, SPI at 62.5 MHz.
 | GIF playback (`videoview`) | 20 fps | Throttled by GIF frame duration metadata |
 | Video playback (`videoplay`) | ~50 fps | ffmpeg-resampled to target fps |
 | OSD overlay (`videoview_osd`) | ~50 fps | FPS counter drawn in fb[] before pushFrame, negligible overhead |
+| Live camera (`camview`) | 30 fps | Gated by USB webcam; SPI has headroom, display matches capture rate |
 
 To push higher fps, increase `spi_speed_hz`. The GC9A01A and RPi 4 SPI bus
 are rated up to 125 MHz; 62.5 MHz is the tested-stable value.
@@ -150,6 +153,25 @@ Offset   Size    Field
 data_off N×115200  Raw pixel data, one frame after another
                    Each frame: 240×240×2 = 115200 bytes, big-endian RGB565
 ```
+
+---
+
+## Pixel format contract
+
+All pixel buffers passed to `pushFrame` must be stored as **big-endian RGB565**
+— the same byte order used by all `BEEPI_*` colour constants.
+
+```
+Colour      LE RGB565   Big-endian RGB565 (pushFrame format)
+Red         0xF800      0x00F8   == BEEPI_RED
+Green       0x07E0      0xE007   == BEEPI_GREEN
+Blue        0x001F      0x1F00   == BEEPI_BLUE
+```
+
+The HAL byte-swaps every pixel on transmission. Asset converters
+(`png_to_rgb565.py`, `gif_to_frames.py`, `video_to_frames.py`) all produce
+big-endian output. The live YUYV converter in `camview.cpp` applies a
+`bswap16` after packing to satisfy this contract.
 
 ---
 
@@ -191,6 +213,7 @@ int main()
 | M3 | Animated GIF playback (BPGF, mmap, per-frame timing) | `videoview.cpp`, `gif_to_frames.py` |
 | M4 | Live FPS OSD overlay (white text, solid bar, correct orientation) | `videoview_osd.cpp` |
 | M5 | Full video playback — any format, centre-crop, 50 fps stress test | `video_to_frames.py`, `videoplay` target |
+| M6 | Live USB camera — V4L2 direct, YUYV→RGB565, lock-free ping-pong threads | `camview.cpp` |
 
 ---
 
