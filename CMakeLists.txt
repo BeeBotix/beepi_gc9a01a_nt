@@ -118,6 +118,14 @@ target_link_libraries(testpattern2 PRIVATE
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
 find_package(Threads REQUIRED)
+
+# GStreamer — optional, required only for picamview
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(GST QUIET
+        gstreamer-1.0
+        gstreamer-app-1.0)
+endif()
 if(NOT Python3_FOUND)
     message(WARNING
         "Python3 not found — imgview will not be built.\n"
@@ -257,6 +265,29 @@ add_executable(camview
 )
 target_include_directories(camview PRIVATE ${CMAKE_SOURCE_DIR}/lib)
 target_link_libraries(camview PRIVATE beepi_gc9a01a_nt Threads::Threads)
+
+# ---------------------------------------------------------------------------
+# picamview — Pi camera live feed via GStreamer libcamerasrc
+# ---------------------------------------------------------------------------
+
+if(GST_FOUND)
+    add_executable(picamview
+        example/picamview.cpp
+    )
+    target_include_directories(picamview PRIVATE
+        ${CMAKE_SOURCE_DIR}/lib
+        ${GST_INCLUDE_DIRS}
+    )
+    target_compile_options(picamview PRIVATE ${GST_CFLAGS_OTHER})
+    target_link_libraries(picamview PRIVATE
+        beepi_gc9a01a_nt
+        Threads::Threads
+        ${GST_LIBRARIES}
+    )
+    message(STATUS "picamview: enabled  (GStreamer found)")
+else()
+    message(STATUS "picamview: skipped  (GStreamer not found — sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev)")
+endif()
 
 # ---------------------------------------------------------------------------
 # Install targets (optional)
